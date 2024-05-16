@@ -68,7 +68,7 @@ private:
 #if USE(GRAPHICS_LAYER_TEXTURE_MAPPER)    
     void updateGeometry(const WebCore::IntSize&, CompletionHandler<void()>&&) override { }
 #endif
-    void updateGeometryWC(uint64_t, WebCore::IntSize) override;
+    void updateGeometryWC(uint64_t, WebCore::IntSize, float) override;
     void setRootCompositingLayer(WebCore::Frame&, WebCore::GraphicsLayer*) override;
     void addRootFrame(WebCore::FrameIdentifier) override;
     void attachViewOverlayGraphicsLayer(WebCore::FrameIdentifier, WebCore::GraphicsLayer*) override;
@@ -93,6 +93,7 @@ private:
         RefPtr<WebCore::GraphicsLayer> viewOverlayRootLayer;
         WebCore::FrameIdentifier frameID;
     };
+    void updateRootLayerSize(RootLayerInfo&, WebCore::FloatSize);
     RootLayerInfo* rootLayerInfoWithFrameIdentifier(WebCore::FrameIdentifier);
 
     WebCore::GraphicsLayerClient m_rootLayerClient;

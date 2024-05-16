@@ -25,6 +25,7 @@
 
 #include "config.h"
 #include "DrawingAreaWC.h"
+#include "WebCore/TransformationMatrix.h"
 
 #if USE(GRAPHICS_LAYER_WC)
 
@@ -83,6 +84,19 @@ void DrawingAreaWC::updateRootLayers()
     triggerRenderingUpdate();
 }
 
+void DrawingAreaWC::updateRootLayerSize(RootLayerInfo& rootLayer, FloatSize size)
+{
+    rootLayer.layer->setSize(size);
+    float deviceScaleFactor = m_webPage->deviceScaleFactor();
+    TransformationMatrix m;
+    m.scale(deviceScaleFactor);
+    // Center view
+    double tx = (size.width() - size.width() / deviceScaleFactor) / 2.0;
+    double ty = (size.height() - size.height() / deviceScaleFactor) / 2.0;
+    m.translate(tx, ty);
+    rootLayer.layer->setTransform(m);
+}
+
 void DrawingAreaWC::setRootCompositingLayer(WebCore::Frame& frame, GraphicsLayer* rootGraphicsLayer)
 {
     for (auto& rootLayer : m_rootLayers) {
@@ -138,10 +152,22 @@ void DrawingAreaWC::setLayerTreeStateIsFrozen(bool isFrozen)
     }
 }
 
-void DrawingAreaWC::updateGeometryWC(uint64_t backingStoreStateID, IntSize viewSize)
+void DrawingAreaWC::updateGeometryWC(uint64_t backingStoreStateID, IntSize viewSize, float deviceScaleFactor)
 {
     m_backingStoreStateID = backingStoreStateID;
+    m_webPage->setDeviceScaleFactor(deviceScaleFactor);
     m_webPage->setSize(viewSize);
+
+    // Update all root layers. For isolated sites.
+    for (auto& rootLayer : m_rootLayers) {
+        auto frame = WebProcess::singleton().webFrame(rootLayer.frameID);
+        FloatSize size;
+        if (frame->isMainFrame())
+            size = m_webPage->size();
+        else
+            size = frame->size();
+        updateRootLayerSize(rootLayer, size);
+    }
 }
 
 void DrawingAreaWC::setNeedsDisplay()
@@ -257,6 +283,9 @@ void DrawingAreaWC::sendUpdateAC()
         auto frame = WebProcess::singleton().webFrame(rootLayer.frameID);
         ASSERT(frame);
         m_updateInfo.remoteContextHostedIdentifier = frame->layerHostingContextIdentifier();
+        FloatSize viewport = m_webPage->size();
+        viewport.scale(m_webPage->deviceScaleFactor());
+        m_updateInfo.viewport = WebCore::expandedIntSize(viewport);
         m_updateInfo.rootLayer = rootLayer.layer->primaryLayerID();
 
         bool isLastFrame = (it + 1) == m_rootLayers.end();
@@ -268,7 +297,7 @@ void DrawingAreaWC::sendUpdateAC()
             size = m_webPage->size();
         else
             size = frame->size();
-        rootLayer.layer->setSize(size);
+        updateRootLayerSize(rootLayer, size);
         rootLayer.layer->flushCompositingStateForThisLayerOnly();
 
         // Because our view-relative overlay root layer is not attached to the FrameView's GraphicsLayer tree, we need to flush it manually.
@@ -328,8 +357,6 @@ void DrawingAreaWC::sendUpdateNonAC()
     Ref webPage = m_webPage.get();
     ASSERT(webPage->bounds().contains(bounds));
     IntSize bitmapSize = bounds.size();
-    float deviceScaleFactor = webPage->corePage()->deviceScaleFactor();
-    bitmapSize.scale(deviceScaleFactor);
 
     auto image = createImageBuffer(bitmapSize);
     auto rects = m_dirtyRegion.rects();
@@ -349,11 +376,11 @@ void DrawingAreaWC::sendUpdateNonAC()
     m_scrollRect = { };
     m_scrollOffset = { };
 
+    // FIXME: should we scale graphicsContext directly?
     auto& graphicsContext = image->context();
-    graphicsContext.applyDeviceScaleFactor(deviceScaleFactor);
     graphicsContext.translate(-bounds.x(), -bounds.y());
     for (const auto& rect : rects)
-        webPage->drawRect(image->context(), rect);
+        webPage->drawRect(graphicsContext, rect);
     image->flushDrawingContextAsync();
 
     auto fence = m_webPage->ensureRemoteRenderingBackendProxy().flushImageBuffers();
@@ -398,9 +425,10 @@ void DrawingAreaWC::commitLayerUpdateInfo(WCLayerUpdateInfo&& info)
 
 RefPtr<ImageBuffer> DrawingAreaWC::createImageBuffer(FloatSize size)
 {
+    float deviceScaleFactor = m_webPage->corePage()->deviceScaleFactor();
     if (WebProcess::singleton().shouldUseRemoteRenderingFor(RenderingPurpose::DOM))
-        return Ref { m_webPage.get() }->ensureRemoteRenderingBackendProxy().createImageBuffer(size, RenderingPurpose::DOM, 1, DestinationColorSpace::SRGB(), PixelFormat::BGRA8, { });
-    return ImageBuffer::create<ImageBufferShareableBitmapBackend>(size, 1, DestinationColorSpace::SRGB(), PixelFormat::BGRA8, RenderingPurpose::DOM, { });
+        return Ref { m_webPage.get() }->ensureRemoteRenderingBackendProxy().createImageBuffer(size, RenderingPurpose::DOM, deviceScaleFactor, DestinationColorSpace::SRGB(), PixelFormat::BGRA8, { });
+    return ImageBuffer::create<ImageBufferShareableBitmapBackend>(size, deviceScaleFactor, DestinationColorSpace::SRGB(), PixelFormat::BGRA8, RenderingPurpose::DOM, { });
 }
 
 void DrawingAreaWC::displayDidRefresh()

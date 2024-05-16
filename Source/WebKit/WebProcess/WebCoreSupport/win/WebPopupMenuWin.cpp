@@ -24,6 +24,7 @@
  */
 
 #include "config.h"
+#include "WebPage.h"
 #include "WebPopupMenu.h"
 
 #include "PlatformPopupMenuData.h"
@@ -72,28 +73,34 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
     popupWidth += 2 * popupWindowBorderWidth;
     data.m_popupWidth = popupWidth;
 
+    float deviceScaleFactor = page()->deviceScaleFactor();
     // The backing stores should be drawn at least as wide as the control on the page to match the width of the popup window we'll create.
-    int backingStoreWidth = std::max(pageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), popupWidth);
+    int itemWidth = std::max(pageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), popupWidth);
 
-    IntSize backingStoreSize(backingStoreWidth, (itemCount * data.m_itemHeight));
+    IntSize backingStoreSize(itemWidth, (itemCount * data.m_itemHeight));
+    backingStoreSize.scale(deviceScaleFactor);
     data.m_notSelectedBackingStore = ShareableBitmap::create({ backingStoreSize });
     data.m_selectedBackingStore = ShareableBitmap::create({ backingStoreSize });
 
     std::unique_ptr<GraphicsContext> notSelectedBackingStoreContext = data.m_notSelectedBackingStore->createGraphicsContext();
     std::unique_ptr<GraphicsContext> selectedBackingStoreContext = data.m_selectedBackingStore->createGraphicsContext();
 
+    notSelectedBackingStoreContext->scale(deviceScaleFactor);
+    selectedBackingStoreContext->scale(deviceScaleFactor);
+
     Color activeOptionBackgroundColor = RenderTheme::singleton().activeListBoxSelectionBackgroundColor({ });
     Color activeOptionTextColor = RenderTheme::singleton().activeListBoxSelectionForegroundColor({ });
 
-    for (int y = 0; y < backingStoreSize.height(); y += data.m_itemHeight) {
-        int index = y / data.m_itemHeight;
+    for (int index = 0; index < itemCount; ++index) {
+        int y = index * data.m_itemHeight;
 
         PopupMenuStyle itemStyle = m_popupClient->itemStyle(index);
 
         Color optionBackgroundColor = itemStyle.backgroundColor();
         Color optionTextColor = itemStyle.foregroundColor();
 
-        IntRect itemRect(0, y, backingStoreWidth, data.m_itemHeight);
+        // NOTE: this should be not-scaled by device scaled factor, cause we scale context.
+        IntRect itemRect(0, y, itemWidth, data.m_itemHeight);
 
         // Draw the background for this menu item
         if (itemStyle.isVisible()) {
@@ -138,9 +145,9 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
                     textX -= minimumIntValueForLength(itemStyle.textIndent(), itemRect.width());
             }
             int textY = itemRect.y() + itemFontCascade.metricsOfPrimaryFont().intAscent() + (itemRect.height() - itemFontCascade.metricsOfPrimaryFont().intHeight()) / 2;
-
-            notSelectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, IntPoint(textX, textY));
-            selectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, IntPoint(textX, textY));
+            const IntPoint textP = IntPoint(textX, textY);
+            notSelectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, textP);
+            selectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, textP);
         }
     }
 }

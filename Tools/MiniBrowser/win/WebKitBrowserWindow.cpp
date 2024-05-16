@@ -199,6 +199,9 @@ WebKitBrowserWindow::WebKitBrowserWindow(BrowserWindowClient& client, WKPageConf
     WKPageSetPageStateClient(page, &stateClient.base);
 
     updateProxySettings();
+    // FIXME: The following CustomBackingScaleFactor and resetZoom are workarounds for
+    // WIP device scale factor handling implementations.
+    WKPageSetCustomBackingScaleFactor(page, 1.0);
     resetZoom();
 }
 

@@ -37,6 +37,23 @@
 namespace WebKit {
 using namespace WebCore;
 
+FloatRect scaledRect(FloatRect rect, float scale)
+{
+    rect.scale(scale);
+    return rect;
+}
+IntRect scaledRect(IntRect rect, float scale)
+{
+    rect.scale(scale);
+    return rect;
+}
+
+FloatSize scaledSize(FloatSize rect, float scale)
+{
+    rect.scale(scale);
+    return rect;
+}
+
 class WCTiledBacking final : public TiledBacking {
     WTF_MAKE_FAST_ALLOCATED;
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(WCTiledBacking);
@@ -59,8 +76,12 @@ public:
             if (!tile.hasDirtyRect())
                 continue;
             repainted = true;
-            auto& dirtyRect = tile.dirtyRect();
-            tileUpdate.dirtyRect = dirtyRect;
+            float deviceScaleFactor = m_owner.deviceScaleFactor();
+            WebCore::IntRect& dirtyRect = tile.dirtyRect();
+            // FIXME: Using enclosingIntRect causes boundary error.
+            // tileUpdate.dirtyRect = WebCore::enclosingIntRect(scaledRect(dirtyRect, deviceScaleFactor));
+            // FIXME: Is this should not be copied?
+            tileUpdate.dirtyRect = scaledRect(dirtyRect, deviceScaleFactor);
             auto image = m_owner.createImageBuffer(dirtyRect.size());
             auto& context = image->context();
             context.translate(-dirtyRect.x(), -dirtyRect.y());
@@ -584,6 +605,7 @@ void GraphicsLayerWC::flushCompositingStateForThisLayerOnly()
         update.background.color = backgroundColor();
         if (drawsContent() && contentsAreVisible()) {
             update.background.hasBackingStore = true;
+            update.background.backingStoreSize = WebCore::expandedIntSize(scaledSize(size(), deviceScaleFactor()));
             if (m_tiledBacking->paintAndFlush(update)) {
                 incrementRepaintCount();
                 update.changes.add(WCLayerChange::RepaintCount);

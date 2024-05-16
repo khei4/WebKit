@@ -350,8 +350,9 @@ void WebPopupMenuProxyWin::hidePopupMenu()
 
 void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
 {
+    float deviceScaleFactor = m_webView->page()->deviceScaleFactor();
     IntRect rectInScreenCoords(rect);
-    rectInScreenCoords.scale(m_scaleFactor);
+    rectInScreenCoords.scale(m_scaleFactor * deviceScaleFactor);
 
     POINT location(rectInScreenCoords .location());
     if (!::ClientToScreen(m_webView->window(), &location))
@@ -359,10 +360,12 @@ void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
     rectInScreenCoords.setLocation(location);
 
     int itemCount = m_items.size();
-    m_itemHeight = m_data.m_itemHeight;
+    m_itemHeight = m_data.m_itemHeight * deviceScaleFactor;
 
     int naturalHeight = m_itemHeight * itemCount;
-    int popupHeight = std::min(maxPopupHeight, naturalHeight);
+    // FIXME: scale maxPopupHeight more concisely
+    // fix m_data might be ideal.
+    int popupHeight = std::min((int)(maxPopupHeight * deviceScaleFactor), naturalHeight);
 
     // The popup should show an integral number of items (i.e. no partial items should be visible)
     popupHeight -= popupHeight % m_itemHeight;
@@ -370,7 +373,7 @@ void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
     // Next determine its width
     int popupWidth = m_data.m_popupWidth;
 
-    if (naturalHeight > maxPopupHeight) {
+    if (naturalHeight > maxPopupHeight * deviceScaleFactor) {
         // We need room for a scrollbar
         popupWidth += ScrollbarTheme::theme().scrollbarThickness(ScrollbarWidth::Thin);
     }

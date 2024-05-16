@@ -58,6 +58,7 @@ public:
     HWND window() const { return m_window; }
     void setParentWindow(HWND);
     void windowAncestryDidChange();
+    WebCore::IntSize viewSize() { return m_viewSize; }
     void setIsInWindow(bool);
     void setIsVisible(bool);
     bool isWindowActive();
@@ -93,6 +94,7 @@ private:
     LRESULT onPaintEvent(HWND hWnd, UINT message, WPARAM, LPARAM, bool& handled);
     LRESULT onPrintClientEvent(HWND hWnd, UINT message, WPARAM, LPARAM, bool& handled);
     LRESULT onSizeEvent(HWND hWnd, UINT message, WPARAM, LPARAM, bool& handled);
+    LRESULT onDPIChangedEvent(HWND hWnd, UINT message, WPARAM, LPARAM, bool& handled);
     LRESULT onWindowPositionChangedEvent(HWND hWnd, UINT message, WPARAM, LPARAM, bool& handled);
     LRESULT onSetFocusEvent(HWND hWnd, UINT message, WPARAM, LPARAM, bool& handled);
     LRESULT onKillFocusEvent(HWND hWnd, UINT message, WPARAM, LPARAM, bool& handled);
@@ -154,6 +156,7 @@ private:
 
     std::unique_ptr<WebKit::PageClientImpl> m_pageClient;
     RefPtr<WebPageProxy> m_page;
+    WebCore::IntSize m_viewSize;
 };
 
 } // namespace WebKit
