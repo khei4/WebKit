@@ -101,8 +101,8 @@ void BackingStore::incorporateUpdate(UpdateInfo&& updateInfo)
         return;
 
 #if ASSERT_ENABLED
-    IntSize updateSize = updateInfo.updateRectBounds.size();
-    updateSize.scale(m_deviceScaleFactor);
+    IntSize updateSize = { static_cast<int>(ceilf(updateInfo.updateRectBounds.size().width() * m_deviceScaleFactor)), 
+        static_cast<int>(ceilf(updateInfo.updateRectBounds.size().height() * m_deviceScaleFactor)) };
     ASSERT(bitmap->size() == updateSize);
 #endif
 

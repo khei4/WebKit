@@ -27,6 +27,7 @@
 #include "WebPopupMenu.h"
 
 #include "PlatformPopupMenuData.h"
+#include "WebPage.h"
 #include <WebCore/LengthFunctions.h>
 #include <WebCore/PopupMenuClient.h>
 #include <WebCore/RenderTheme.h>
@@ -40,9 +41,17 @@ static const int popupWindowBorderWidth = 1;
 
 void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, PlatformPopupMenuData& data)
 {
+    auto deviceScaleFactor = page()->deviceScaleFactor();
+
+    WebCore::IntRect scaledPageCoordinates = pageCoordinates;
+    scaledPageCoordinates.scale(deviceScaleFactor);
     int itemCount = m_popupClient->listSize();
 
     auto font = m_popupClient->menuStyle().font();
+    auto fontDescription = font.fontDescription();
+    fontDescription.setComputedSize(fontDescription.computedSize() * deviceScaleFactor);
+    font = FontCascade(WTFMove(fontDescription), font);
+    font.update(m_popupClient->fontSelector());
 
     data.m_clientPaddingLeft = m_popupClient->clientPaddingLeft();
     data.m_clientPaddingRight = m_popupClient->clientPaddingRight();
@@ -73,7 +82,7 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
     data.m_popupWidth = popupWidth;
 
     // The backing stores should be drawn at least as wide as the control on the page to match the width of the popup window we'll create.
-    int backingStoreWidth = std::max(pageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), popupWidth);
+    int backingStoreWidth = std::max(scaledPageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), popupWidth);
 
     IntSize backingStoreSize(backingStoreWidth, (itemCount * data.m_itemHeight));
     data.m_notSelectedBackingStore = ShareableBitmap::create({ backingStoreSize });
@@ -85,8 +94,8 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
     Color activeOptionBackgroundColor = RenderTheme::singleton().activeListBoxSelectionBackgroundColor({ });
     Color activeOptionTextColor = RenderTheme::singleton().activeListBoxSelectionForegroundColor({ });
 
-    for (int y = 0; y < backingStoreSize.height(); y += data.m_itemHeight) {
-        int index = y / data.m_itemHeight;
+    for (size_t index = 0; index < itemCount; ++index) {
+        int y = index * data.m_itemHeight;
 
         PopupMenuStyle itemStyle = m_popupClient->itemStyle(index);
 
@@ -139,8 +148,9 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
             }
             int textY = itemRect.y() + itemFontCascade.metricsOfPrimaryFont().intAscent() + (itemRect.height() - itemFontCascade.metricsOfPrimaryFont().intHeight()) / 2;
 
-            notSelectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, IntPoint(textX, textY));
-            selectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, IntPoint(textX, textY));
+            const IntPoint textPoint = IntPoint(textX, textY);
+            notSelectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, textPoint);
+            selectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, textPoint);
         }
     }
 }
