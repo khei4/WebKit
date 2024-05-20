@@ -37,6 +37,7 @@
 #include "WebContextMenuProxyWin.h"
 #include "WebEditCommandProxy.h"
 #include "WebEventFactory.h"
+#include "WebInspectorUIProxy.h"
 #include "WebKitDLL.h"
 #include "WebPageGroup.h"
 #include "WebPageProxy.h"
@@ -162,6 +163,9 @@ LRESULT WebView::wndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_WINDOWPOSCHANGED:
         lResult = onWindowPositionChangedEvent(hWnd, message, wParam, lParam, handled);
+        break;
+    case WM_DPICHANGED:
+        lResult = onDPIChangedEvent(hWnd, message, wParam, lParam, handled);
         break;
     case WM_SETFOCUS:
         lResult = onSetFocusEvent(hWnd, message, wParam, lParam, handled);
@@ -570,6 +574,17 @@ LRESULT WebView::onWindowPositionChangedEvent(HWND, UINT, WPARAM, LPARAM lParam,
         updateActiveStateSoon();
 
     handled = false;
+    return 0;
+}
+
+LRESULT WebView::onDPIChangedEvent(HWND hwnd, UINT, WPARAM, LPARAM lParam, bool& handled)
+{
+    assert(m_page);
+    m_page->setIntrinsicDeviceScaleFactor(deviceScaleFactorForWindow(hwnd));
+    if (auto* inspector = m_page->inspector())
+        if (auto inspectorPage = inspector->inspectorPage())
+            inspectorPage->setIntrinsicDeviceScaleFactor(deviceScaleFactorForWindow(hwnd));
+
     return 0;
 }
 

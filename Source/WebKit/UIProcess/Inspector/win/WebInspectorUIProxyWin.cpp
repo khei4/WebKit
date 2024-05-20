@@ -41,6 +41,7 @@
 #include "WebProcessPool.h"
 #include "WebView.h"
 #include <WebCore/CertificateInfo.h>
+#include <WebCore/GDIUtilities.h>
 #include <WebCore/InspectorFrontendClient.h>
 #include <WebCore/InspectorFrontendClientLocal.h>
 #include <WebCore/NotImplemented.h>
@@ -174,9 +175,9 @@ void WebInspectorUIProxy::windowReceivedMessage(HWND hwnd, UINT msg, WPARAM, LPA
     }
 }
 
-LRESULT CALLBACK WebInspectorUIProxy::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WebInspectorUIProxy::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    WebInspectorUIProxy* inspector = reinterpret_cast<WebInspectorUIProxy*>(::GetProp(hwnd, WebInspectorUIProxyPointerProp));
+    WebInspectorUIProxy* inspector = reinterpret_cast<WebInspectorUIProxy*>(::GetProp(hWnd, WebInspectorUIProxyPointerProp));
     switch (msg) {
     case WM_SIZE:
         ::SetWindowPos(inspector->m_inspectorViewWindow, 0, 0, 0, LOWORD(lParam), HIWORD(lParam), SWP_NOZORDER);
@@ -184,10 +185,16 @@ LRESULT CALLBACK WebInspectorUIProxy::wndProc(HWND hwnd, UINT msg, WPARAM wParam
     case WM_CLOSE:
         inspector->close();
         return 0;
+    case WM_DPICHANGED: {
+        RECT& rect = *reinterpret_cast<RECT*>(lParam);
+        inspector->inspectorPage()->setIntrinsicDeviceScaleFactor(WebCore::deviceScaleFactorForWindow(hWnd));
+        SetWindowPos(hWnd, nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
     default:
         break;
     }
-    return ::DefWindowProc(hwnd, msg, wParam, lParam);
+    return ::DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
 bool WebInspectorUIProxy::registerWindowClass()
