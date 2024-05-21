@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2018 Sony Interactive Entertainment Inc.
  *
@@ -63,6 +63,12 @@ static constexpr UINT WM_HOST_WINDOW_MOUSEMOVE = WM_USER + WM_MOUSEMOVE;
 static inline bool isASCIIPrintable(unsigned c)
 {
     return c >= 0x20 && c <= 0x7E;
+}
+
+static inline POINT point(LPARAM lParam)
+{
+    POINT point = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+    return point;
 }
 
 static void translatePoint(LPARAM& lParam, HWND from, HWND to)
@@ -350,7 +356,7 @@ void WebPopupMenuProxyWin::hidePopupMenu()
 
 void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
 {
-    auto deviceScaleFactor = m_webView->page()->deviceScaleFactor();
+    float deviceScaleFactor = m_webView->page()->deviceScaleFactor();
     IntRect rectInScreenCoords(rect);
     rectInScreenCoords.scale(m_scaleFactor * deviceScaleFactor);
 
@@ -362,8 +368,8 @@ void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
     int itemCount = m_items.size();
     m_itemHeight = m_data.m_itemHeight;
 
-    int naturalHeight = m_itemHeight * itemCount;
-    int physicalMaxPopupHeight = static_cast<int>(maxPopupHeight * deviceScaleFactor);
+    int naturalHeight = m_data.m_itemHeight * itemCount;
+    int physicalMaxPopupHeight = maxPopupHeight;
     int popupHeight = std::min(physicalMaxPopupHeight, naturalHeight);
 
     // The popup should show an integral number of items (i.e. no partial items should be visible)
@@ -447,7 +453,7 @@ void WebPopupMenuProxyWin::invalidateItem(int index)
 
 ScrollPosition WebPopupMenuProxyWin::scrollPosition() const
 {
-    return { 0, m_scrollOffset };
+    return { 0, static_cast<int>(m_scrollOffset * m_webView->page()->deviceScaleFactor())};
 }
 
 void WebPopupMenuProxyWin::setScrollOffset(const IntPoint& offset)
@@ -632,7 +638,10 @@ LRESULT WebPopupMenuProxyWin::onMouseMove(HWND hWnd, UINT message, WPARAM wParam
 {
     handled = true;
 
-    IntPoint mousePoint(MAKEPOINTS(lParam));
+    float deviceScaleFactor = m_webView->page()->deviceScaleFactor();
+    POINT positionPoint = point(lParam);
+    IntPoint mousePoint = positionPoint;
+    mousePoint.scale(1 / deviceScaleFactor);
     if (m_scrollbar) {
         IntRect scrollBarRect = m_scrollbar->frameRect();
         if (scrollbarCapturingMouse() || scrollBarRect.contains(mousePoint)) {
@@ -672,8 +681,12 @@ LRESULT WebPopupMenuProxyWin::onMouseMove(HWND hWnd, UINT message, WPARAM wParam
 LRESULT WebPopupMenuProxyWin::onLButtonDown(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, bool& handled)
 {
     handled = true;
+    float deviceScaleFactor = m_webView->page()->deviceScaleFactor();
 
-    IntPoint mousePoint(MAKEPOINTS(lParam));
+    // IntPoint mousePoint(MAKEPOINTS(lParam));
+    POINT positionPoint = point(lParam);
+    IntPoint mousePoint = positionPoint;
+    mousePoint.scale(1 / deviceScaleFactor);
     if (m_scrollbar) {
         IntRect scrollBarRect = m_scrollbar->frameRect();
         if (scrollBarRect.contains(mousePoint)) {
@@ -704,7 +717,10 @@ LRESULT WebPopupMenuProxyWin::onLButtonUp(HWND hWnd, UINT message, WPARAM wParam
 {
     handled = true;
 
-    IntPoint mousePoint(MAKEPOINTS(lParam));
+    float deviceScaleFactor = m_webView->page()->deviceScaleFactor();
+    POINT positionPoint = point(lParam);
+    IntPoint mousePoint = positionPoint;
+    mousePoint.scale(1 / deviceScaleFactor);
     if (m_scrollbar) {
         IntRect scrollBarRect = m_scrollbar->frameRect();
         if (scrollbarCapturingMouse() || scrollBarRect.contains(mousePoint)) {
@@ -842,6 +858,9 @@ void WebPopupMenuProxyWin::paint(const IntRect& damageRect, HDC hdc)
     }
 
     GraphicsContextCairo context(m_DC.get());
+    // khei4: Scaleするのここだけでいいのでは？
+    // TODO: 本物のDeviceScaleFactor
+    context.scale(2.7);
 
     IntRect translatedDamageRect = damageRect;
     translatedDamageRect.move(IntSize(0, m_scrollOffset * m_itemHeight));

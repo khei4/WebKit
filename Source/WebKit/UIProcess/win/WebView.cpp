@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2017 Sony Interactive Entertainment Inc.
  *
@@ -553,10 +553,14 @@ LRESULT WebView::onSizeEvent(HWND hwnd, UINT, WPARAM, LPARAM lParam, bool& handl
     // FIXME: default device scale factor was not used at first loading.
     // Because of WebKitBrowserWindow.cpp sets custom device scale factor
     // to 1 now, this m_viewSize is not scaled if it has no m_page.
+    // khei4: idsf isn't rendered, and rescaled after m_page is loaded, 
+    // khei4: 普通に!m_pageいらなそう
+    float cdsf = m_page ? m_page->deviceScaleFactor() : 1;
+    float idsf = deviceScaleFactorForWindow(hwnd);
     if (!m_page)
-        m_viewSize = IntSize(LOWORD(lParam), HIWORD(lParam));
+        m_viewSize = expandedIntSize(FloatSize(LOWORD(lParam), HIWORD(lParam)) / idsf);
     else
-        m_viewSize = expandedIntSize(FloatSize(LOWORD(lParam), HIWORD(lParam)) / m_page->deviceScaleFactor());
+        m_viewSize = expandedIntSize(FloatSize(LOWORD(lParam), HIWORD(lParam)) / cdsf);
 
     if (m_page && m_page->drawingArea()) {
         // FIXME specify correctly layerPosition.

@@ -41,17 +41,13 @@ static const int popupWindowBorderWidth = 1;
 
 void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, PlatformPopupMenuData& data)
 {
-    auto deviceScaleFactor = page()->deviceScaleFactor();
+    float deviceScaleFactor = page()->deviceScaleFactor();
 
-    WebCore::IntRect scaledPageCoordinates = pageCoordinates;
-    scaledPageCoordinates.scale(deviceScaleFactor);
+    // WebCore::IntRect scaledPageCoordinates = pageCoordinates;
+    // scaledPageCoordinates.scale(deviceScaleFactor);
     int itemCount = m_popupClient->listSize();
 
     auto font = m_popupClient->menuStyle().font();
-    auto fontDescription = font.fontDescription();
-    fontDescription.setComputedSize(fontDescription.computedSize() * deviceScaleFactor);
-    font = FontCascade(WTFMove(fontDescription), font);
-    font.update(m_popupClient->fontSelector());
 
     data.m_clientPaddingLeft = m_popupClient->clientPaddingLeft();
     data.m_clientPaddingRight = m_popupClient->clientPaddingRight();
@@ -82,19 +78,25 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
     data.m_popupWidth = popupWidth;
 
     // The backing stores should be drawn at least as wide as the control on the page to match the width of the popup window we'll create.
-    int backingStoreWidth = std::max(scaledPageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), popupWidth);
+    int itemWidth = std::max(pageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), popupWidth);
 
-    IntSize backingStoreSize(backingStoreWidth, (itemCount * data.m_itemHeight));
+    IntSize backingStoreSize(itemWidth, (itemCount * data.m_itemHeight));
+    backingStoreSize.scale(deviceScaleFactor);
     data.m_notSelectedBackingStore = ShareableBitmap::create({ backingStoreSize });
     data.m_selectedBackingStore = ShareableBitmap::create({ backingStoreSize });
 
     std::unique_ptr<GraphicsContext> notSelectedBackingStoreContext = data.m_notSelectedBackingStore->createGraphicsContext();
     std::unique_ptr<GraphicsContext> selectedBackingStoreContext = data.m_selectedBackingStore->createGraphicsContext();
+    // notSelectedBackingStoreContext->scale(deviceScaleFactor);
+    // selectedBackingStoreContext->scale(deviceScaleFactor);
 
     Color activeOptionBackgroundColor = RenderTheme::singleton().activeListBoxSelectionBackgroundColor({ });
     Color activeOptionTextColor = RenderTheme::singleton().activeListBoxSelectionForegroundColor({ });
 
     for (size_t index = 0; index < itemCount; ++index) {
+        // khei4: ここのyがずれていってしまうのが問題ぽい...?
+        // khei4: これが、予想より小さくなると、どうなる？
+        // SelectedとnonSelected, BackingStoreがどこかはfloat, どこかはintで出てるっぽい
         int y = index * data.m_itemHeight;
 
         PopupMenuStyle itemStyle = m_popupClient->itemStyle(index);
@@ -102,7 +104,7 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
         Color optionBackgroundColor = itemStyle.backgroundColor();
         Color optionTextColor = itemStyle.foregroundColor();
 
-        IntRect itemRect(0, y, backingStoreWidth, data.m_itemHeight);
+        IntRect itemRect(0, y, itemWidth, data.m_itemHeight);
 
         // Draw the background for this menu item
         if (itemStyle.isVisible()) {
@@ -123,7 +125,7 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
         TextRun textRun(itemText, 0, 0, ExpansionBehavior::allowRightOnly(), itemStyle.textDirection(), itemStyle.hasTextDirectionOverride());
 
         notSelectedBackingStoreContext->setFillColor(optionTextColor);
-        selectedBackingStoreContext->setFillColor(activeOptionTextColor);
+        // selectedBackingStoreContext->setFillColor(activeOptionTextColor);
 
         auto itemFontCascade = font;
         if (m_popupClient->itemIsLabel(index)) {
