@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2018 Sony Interactive Entertainment Inc.
  *
@@ -202,7 +202,7 @@ void WebPopupMenuProxyWin::showPopupMenu(const IntRect& rect, TextDirection, dou
 
         m_popup = ::CreateWindowEx(exStyle, kWebKit2WebPopupMenuProxyWindowClassName, TEXT("PopupMenu"),
             WS_POPUP | WS_BORDER,
-            m_windowRect.x(), m_windowRect.y(), m_windowRect.width(), m_windowRect.height(),
+            m_physicalWindowRect.x(), m_physicalWindowRect.y(), m_physicalWindowRect.width(), m_physicalWindowRect.height(),
             hostWindow, 0, instanceHandle(), this);
 
         if (!m_popup)
@@ -224,7 +224,7 @@ void WebPopupMenuProxyWin::showPopupMenu(const IntRect& rect, TextDirection, dou
         if (!::IsRectEmpty(&viewRect)) {
             // Popups should slide into view away from the <select> box
             // NOTE: This may have to change for Vista
-            DWORD slideDirection = (m_windowRect.y() < viewRect.top + rect.location().y()) ? AW_VER_NEGATIVE : AW_VER_POSITIVE;
+            DWORD slideDirection = (m_physicalWindowRect.y() < viewRect.top + rect.location().y()) ? AW_VER_NEGATIVE : AW_VER_POSITIVE;
 
             ::AnimateWindow(m_popup, defaultAnimationDuration, AW_SLIDE | slideDirection);
         }
@@ -348,81 +348,95 @@ void WebPopupMenuProxyWin::hidePopupMenu()
     ::PostMessage(m_popup, WM_NULL, 0, 0);
 }
 
+// FIXME: It would be simple to compute size logically.
+// Scalling ScrollBar size and mouse points logically would remove the necessity of this function.
+static float logicalToPhysical(WebView* webView, float logicalSize)
+{
+    float deviceScaleFactor = webView->page()->deviceScaleFactor();
+    return deviceScaleFactor * logicalSize;
+}
+
 void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
 {
-    IntRect rectInScreenCoords(rect);
-    rectInScreenCoords.scale(m_scaleFactor);
-
-    POINT location(rectInScreenCoords .location());
-    if (!::ClientToScreen(m_webView->window(), &location))
+    // 1. Get a screen-relative point and decide the direction
+    float deviceScaleFactor = m_webView->page()->deviceScaleFactor();
+    IntRect scaledRect(rect);
+    scaledRect.scale(m_scaleFactor * deviceScaleFactor);
+    IntPoint windowRelativePoint = scaledRect.location();
+    POINT screenRelativePoint(windowRelativePoint);
+    if (!::ClientToScreen(m_webView->window(), &screenRelativePoint))
         return;
-    rectInScreenCoords.setLocation(location);
+    IntRect physicalRectInScreenCoords(screenRelativePoint, scaledRect.size());
 
+    // 2. Height/Y calculation
     int itemCount = m_items.size();
     m_itemHeight = m_data.m_itemHeight;
-
-    int naturalHeight = m_itemHeight * itemCount;
-    int popupHeight = std::min(maxPopupHeight, naturalHeight);
-
-    // The popup should show an integral number of items (i.e. no partial items should be visible)
-    popupHeight -= popupHeight % m_itemHeight;
-
-    // Next determine its width
-    int popupWidth = m_data.m_popupWidth;
-
-    if (naturalHeight > maxPopupHeight) {
-        // We need room for a scrollbar
-        popupWidth += ScrollbarTheme::theme().scrollbarThickness(ScrollbarWidth::Thin);
-    }
-
-    popupHeight += 2 * popupWindowBorderWidth;
-
-    // The popup should be at least as wide as the control on the page
-    popupWidth = std::max(rectInScreenCoords.width() - m_data.m_clientInsetLeft - m_data.m_clientInsetRight, popupWidth);
-
-    // Always left-align items in the popup. This matches popup menus on the mac.
-    int popupX = rectInScreenCoords.x() + m_data.m_clientInsetLeft;
-
-    IntRect popupRect(popupX, rectInScreenCoords.maxY(), popupWidth, popupHeight);
+    float itemHeightPhysical = m_data.m_itemHeight * deviceScaleFactor;
+    float naturalHeightPhysical = itemHeightPhysical * itemCount;
+    float maxPopupHeightPhysical = maxPopupHeight * deviceScaleFactor;
+    float popupHeightPhysical = std::min(maxPopupHeightPhysical, naturalHeightPhysical);
+    float popupRectYPhysical = physicalRectInScreenCoords.maxY();
 
     // The popup needs to stay within the bounds of the screen and not overlap any toolbars
     HMONITOR monitor = ::MonitorFromWindow(m_webView->window(), MONITOR_DEFAULTTOPRIMARY);
     MONITORINFOEX monitorInfo;
     monitorInfo.cbSize = sizeof(MONITORINFOEX);
     ::GetMonitorInfo(monitor, &monitorInfo);
-    FloatRect screen = static_cast<IntRect>(monitorInfo.rcWork);
+    FloatRect screen = static_cast<FloatRect>(monitorInfo.rcWork);
 
-    // Check that we don't go off the screen vertically
-    if (popupRect.maxY() > screen.height()) {
-        // The popup will go off the screen, so try placing it above the client
-        if (rectInScreenCoords.y() - popupRect.height() < 0) {
-            // The popup won't fit above, either, so place it whereever's bigger and resize it to fit
-            if ((rectInScreenCoords.y() + rectInScreenCoords.height() / 2) < (screen.height() / 2)) {
-                // Below is bigger
-                popupRect.setHeight(screen.height() - popupRect.y());
-            } else {
-                // Above is bigger
-                popupRect.setY(0);
-                popupRect.setHeight(rectInScreenCoords.y());
-            }
-        } else {
-            // The popup fits above, so reposition it
-            popupRect.setY(rectInScreenCoords.y() - popupRect.height());
+    // The popup height should be a multiple of item height with window borders. (i.e. no partial items should be visible)
+    auto adjustPopupHeight = [&itemHeightPhysical](float popupHeight) -> float {
+        return popupHeight - fmod(popupHeight, itemHeightPhysical) + 2 * popupWindowBorderWidth;
+    };
+
+    float centerOfSelect = physicalRectInScreenCoords.y() + physicalRectInScreenCoords.height() / 2.;
+    bool shouldBeBellow = centerOfSelect < (screen.height() / 2);
+    popupHeightPhysical = adjustPopupHeight(popupHeightPhysical);
+    if (shouldBeBellow) {
+        float popupRectMaxY = physicalRectInScreenCoords.maxY() + popupHeightPhysical;
+        // don't fit
+        if (screen.height() < popupRectMaxY) {
+            popupHeightPhysical = adjustPopupHeight(screen.height() - physicalRectInScreenCoords.maxY());
+        }
+    } else {
+        popupRectYPhysical = physicalRectInScreenCoords.y() - popupHeightPhysical;
+        // don't fit
+        if (popupRectYPhysical < 0) {
+            popupHeightPhysical = adjustPopupHeight(physicalRectInScreenCoords.y());
+            popupRectYPhysical = fmod(physicalRectInScreenCoords.y(), itemHeightPhysical);
         }
     }
 
-    // Check that we don't go off the screen horizontally
-    if (popupRect.x() < screen.x()) {
-        popupRect.setWidth(popupRect.width() - (screen.x() - popupRect.x()));
-        popupRect.setX(screen.x());
+    // 3. Width/X calculation
+    float popupWidthPhysical = m_data.m_popupWidth;
+
+    // We need room for a scrollbar
+    if (maxPopupHeightPhysical < naturalHeightPhysical) {
+        popupWidthPhysical += ScrollbarTheme::theme().scrollbarThickness(ScrollbarWidth::Thin);
     }
 
-    m_windowRect = popupRect;
+    popupWidthPhysical *= deviceScaleFactor;
+
+    // The popup should be at least as wide as the control on the page
+    popupWidthPhysical = std::fmax(physicalRectInScreenCoords.width() - m_data.m_clientInsetLeft - m_data.m_clientInsetRight, popupWidthPhysical);
+
+    // Always left-align items in the popup. This matches popup menus on the mac.
+    float popupRectXPhysical = physicalRectInScreenCoords.x() + m_data.m_clientInsetLeft;
+
+    // Check that we don't go off the screen horizontally
+    if (popupRectXPhysical < screen.x()) {
+        popupWidthPhysical = popupWidthPhysical - (screen.x() - popupRectXPhysical);
+        popupRectXPhysical = screen.x();
+    }
+
+    m_physicalWindowRect = enclosingIntRect(FloatRect{
+    popupRectXPhysical, popupRectYPhysical, popupWidthPhysical, popupHeightPhysical
+    });
 }
 
 IntRect WebPopupMenuProxyWin::clientRect() const
 {
-    IntRect clientRect = m_windowRect;
+    IntRect clientRect = m_physicalWindowRect;
     clientRect.inflate(-popupWindowBorderWidth);
     clientRect.setLocation(IntPoint(0, 0));
     return clientRect;
@@ -434,8 +448,9 @@ void WebPopupMenuProxyWin::invalidateItem(int index)
         return;
 
     IntRect damageRect(clientRect());
-    damageRect.setY(m_itemHeight * (index - m_scrollOffset));
-    damageRect.setHeight(m_itemHeight);
+    float itemHeightPhysical = logicalToPhysical(m_webView, m_itemHeight);
+    damageRect.setY(itemHeightPhysical * (index - m_scrollOffset));
+    damageRect.setHeight(itemHeightPhysical);
     if (m_scrollbar)
         damageRect.setWidth(damageRect.width() - m_scrollbar->frameRect().width());
 
@@ -461,12 +476,12 @@ IntSize WebPopupMenuProxyWin::visibleSize() const
 
 WebCore::IntSize WebPopupMenuProxyWin::contentsSize() const
 {
-    return IntSize(m_windowRect.width(), m_scrollbar ? m_scrollbar->totalSize() : m_windowRect.height());
+    return IntSize(m_physicalWindowRect.width(), m_scrollbar ? m_scrollbar->totalSize() : m_physicalWindowRect.height());
 }
 
 WebCore::IntRect WebPopupMenuProxyWin::scrollableAreaBoundingBox(bool*) const
 {
-    return m_windowRect;
+    return m_physicalWindowRect;
 }
 
 void WebPopupMenuProxyWin::scrollTo(int offset)
@@ -495,7 +510,8 @@ void WebPopupMenuProxyWin::scrollTo(int offset)
     if (m_scrollbar)
         listRect.setWidth(listRect.width() - m_scrollbar->frameRect().width());
     RECT r = listRect;
-    ::ScrollWindowEx(m_popup, 0, scrolledLines * m_itemHeight, &r, 0, 0, 0, flags);
+
+    ::ScrollWindowEx(m_popup, 0, scrolledLines * logicalToPhysical(m_webView, m_itemHeight), &r, 0, 0, 0, flags);
     if (m_scrollbar) {
         r = m_scrollbar->frameRect();
         ::InvalidateRect(m_popup, &r, TRUE);
@@ -672,6 +688,7 @@ LRESULT WebPopupMenuProxyWin::onLButtonDown(HWND hWnd, UINT message, WPARAM wPar
     handled = true;
 
     IntPoint mousePoint(MAKEPOINTS(lParam));
+    // 物理ピクセルでの計算で, おたかしのPatchで論理の計算になる
     if (m_scrollbar) {
         IntRect scrollBarRect = m_scrollbar->frameRect();
         if (scrollBarRect.contains(mousePoint)) {
@@ -684,8 +701,9 @@ LRESULT WebPopupMenuProxyWin::onLButtonDown(HWND hWnd, UINT message, WPARAM wPar
         }
     }
 
-    // If the mouse is inside the window, update the focused index. Otherwise, 
+    // If the mouse is inside the window, update the focused index. Otherwise,
     // hide the popup.
+    // 高さを物理にして、物理での計算
     RECT bounds;
     ::GetClientRect(m_popup, &bounds);
     if (::PtInRect(&bounds, mousePoint)) {
@@ -842,12 +860,14 @@ void WebPopupMenuProxyWin::paint(const IntRect& damageRect, HDC hdc)
     GraphicsContextCairo context(m_DC.get());
 
     IntRect translatedDamageRect = damageRect;
-    translatedDamageRect.move(IntSize(0, m_scrollOffset * m_itemHeight));
+
+    float itemHeightPhysical = logicalToPhysical(m_webView, m_itemHeight);
+    translatedDamageRect.move(IntSize(0, m_scrollOffset * itemHeightPhysical));
     m_data.m_notSelectedBackingStore->paint(context, damageRect.location(), translatedDamageRect);
 
-    IntRect selectedIndexRectInBackingStore(0, focusedIndex() * m_itemHeight, m_data.m_selectedBackingStore->size().width(), m_itemHeight);
+    IntRect selectedIndexRectInBackingStore(0, focusedIndex() * itemHeightPhysical, m_data.m_selectedBackingStore->size().width(), itemHeightPhysical);
     IntPoint selectedIndexDstPoint = selectedIndexRectInBackingStore.location();
-    selectedIndexDstPoint.move(0, -m_scrollOffset * m_itemHeight);
+    selectedIndexDstPoint.move(0, -m_scrollOffset * itemHeightPhysical);
 
     m_data.m_selectedBackingStore->paint(context, selectedIndexDstPoint, selectedIndexRectInBackingStore);
 
@@ -885,12 +905,12 @@ bool WebPopupMenuProxyWin::setFocusedIndex(int i, bool hotTracking)
 
 int WebPopupMenuProxyWin::visibleItems() const
 {
-    return clientRect().height() / m_itemHeight;
+    return clientRect().height() / logicalToPhysical(m_webView, m_itemHeight);
 }
 
 int WebPopupMenuProxyWin::listIndexAtPoint(const IntPoint& point) const
 {
-    return m_scrollOffset + point.y() / m_itemHeight;
+    return m_scrollOffset + point.y() / logicalToPhysical(m_webView, m_itemHeight);
 }
 
 int WebPopupMenuProxyWin::focusedIndex() const

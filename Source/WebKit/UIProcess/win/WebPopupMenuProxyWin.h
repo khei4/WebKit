@@ -108,9 +108,8 @@ private:
     WebCore::IntRect clientRect() const;
     void invalidateItem(int index);
 
-
-    int itemHeight() const { return m_itemHeight; }
-    const WebCore::IntRect& windowRect() const { return m_windowRect; }
+    float itemHeight() const { return m_itemHeight; }
+    const WebCore::IntRect& windowRect() const { return m_physicalWindowRect; }
     int wheelDelta() const { return m_wheelDelta; }
     void setWasClicked(bool b = true) { m_wasClicked = b; }
     bool wasClicked() const { return m_wasClicked; }
@@ -139,9 +138,9 @@ private:
     GDIObject<HDC> m_DC;
     GDIObject<HBITMAP> m_bmp;
     HWND m_popup { nullptr };
-    WebCore::IntRect m_windowRect;
+    WebCore::IntRect m_physicalWindowRect;
 
-    int m_itemHeight { 0 };
+    float m_itemHeight { 0 };
     int m_scrollOffset { 0 };
     int m_wheelDelta { 0 };
     int m_focusedIndex { 0 };

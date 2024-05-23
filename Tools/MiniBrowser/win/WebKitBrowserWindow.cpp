@@ -199,6 +199,9 @@ WebKitBrowserWindow::WebKitBrowserWindow(BrowserWindowClient& client, WKPageConf
     WKPageSetPageStateClient(page, &stateClient.base);
 
     updateProxySettings();
+
+    // FIXME: The current design of WebKit cannot support fractional device scale factor.
+    WKPageSetCustomBackingScaleFactor(page, 2.0);
     resetZoom();
 }
 
@@ -295,6 +298,9 @@ HRESULT WebKitBrowserWindow::loadURL(const BSTR& url)
 void WebKitBrowserWindow::reload()
 {
     auto page = WKViewGetPage(m_view.get());
+    static float cdsf = 2.0;
+    cdsf += 0.25;
+    WKPageSetCustomBackingScaleFactor(page, cdsf);
     WKPageReload(page);
 }
 
