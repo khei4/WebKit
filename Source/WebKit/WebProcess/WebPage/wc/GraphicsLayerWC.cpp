@@ -59,9 +59,11 @@ public:
             if (!tile.hasDirtyRect())
                 continue;
             repainted = true;
-            auto& dirtyRect = tile.dirtyRect();
+            float deviceScaleFactor = m_owner.deviceScaleFactor();
+            IntRect& dirtyRect = tile.dirtyRect();
             tileUpdate.dirtyRect = dirtyRect;
-            auto image = m_owner.createImageBuffer(dirtyRect.size());
+            tileUpdate.dirtyRect.scale(deviceScaleFactor);
+            auto image = m_owner.createImageBuffer(dirtyRect.size(), deviceScaleFactor);
             auto& context = image->context();
             context.translate(-dirtyRect.x(), -dirtyRect.y());
             m_owner.paintGraphicsLayerContents(context, dirtyRect);
@@ -587,6 +589,7 @@ void GraphicsLayerWC::flushCompositingStateForThisLayerOnly()
         update.background.color = backgroundColor();
         if (drawsContent() && contentsAreVisible()) {
             update.background.hasBackingStore = true;
+            update.background.backingStoreSize = WebCore::expandedIntSize(size() * deviceScaleFactor());
             if (m_tiledBacking->paintAndFlush(update)) {
                 incrementRepaintCount();
                 update.changes.add(WCLayerChange::RepaintCount);
@@ -635,9 +638,9 @@ TiledBacking* GraphicsLayerWC::tiledBacking() const
     return m_tiledBacking->tiledBacking();
 }
 
-RefPtr<WebCore::ImageBuffer> GraphicsLayerWC::createImageBuffer(WebCore::FloatSize size)
+RefPtr<WebCore::ImageBuffer> GraphicsLayerWC::createImageBuffer(WebCore::FloatSize size, float deviceScaleFactor)
 {
-    return m_observer->createImageBuffer(size);
+    return m_observer->createImageBuffer(size, deviceScaleFactor);
 }
 
 static inline bool accumulatesTransform(const GraphicsLayerWC& layer)

@@ -27,6 +27,7 @@
 #include "WebPopupMenu.h"
 
 #include "PlatformPopupMenuData.h"
+#include "WebPage.h"
 #include <WebCore/LengthFunctions.h>
 #include <WebCore/PopupMenuClient.h>
 #include <WebCore/RenderTheme.h>
@@ -36,10 +37,11 @@ using namespace WebCore;
 
 static const int separatorPadding = 4;
 static const int separatorHeight = 1;
-static const int popupWindowBorderWidth = 1;
 
 void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, PlatformPopupMenuData& data)
 {
+    float deviceScaleFactor = page()->deviceScaleFactor();
+
     int itemCount = m_popupClient->listSize();
 
     auto font = m_popupClient->menuStyle().font();
@@ -49,8 +51,13 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
     data.m_clientInsetLeft = m_popupClient->clientInsetLeft();
     data.m_clientInsetRight = m_popupClient->clientInsetRight();
     data.m_itemHeight = font.metricsOfPrimaryFont().intHeight() + 1;
+    // make logical height be multiple of 4, not to allow error on int conversion.
+    if (int r = data.m_itemHeight % 4)
+        data.m_itemHeight += (4 - r);
 
-    int popupWidth = 0;
+    int itemHeightPhysical = data.m_itemHeight * deviceScaleFactor;
+
+    int itemWidth = 0;
     for (size_t i = 0; i < itemCount; ++i) {
         String text = m_popupClient->itemText(i);
         if (text.isEmpty())
@@ -64,29 +71,31 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
             itemFontCascade.update(m_popupClient->fontSelector());
         }
 
-        popupWidth = std::max<float>(popupWidth, ceilf(itemFontCascade.width(TextRun(text))));
+        itemWidth = std::max(itemWidth, static_cast<int>(ceil(itemFontCascade.width(TextRun(text)))));
     }
 
     // FIXME: popupWidth should probably take into account monitor constraints as is done with WebPopupMenuProxyWin::calculatePositionAndSize.
-    popupWidth += std::max(0, data.m_clientPaddingRight - data.m_clientInsetRight) + std::max(0, data.m_clientPaddingLeft - data.m_clientInsetLeft);
-    popupWidth += 2 * popupWindowBorderWidth;
-    data.m_popupWidth = popupWidth;
+    itemWidth += std::max(0, data.m_clientPaddingRight - data.m_clientInsetRight) + std::max(0, data.m_clientPaddingLeft - data.m_clientInsetLeft);
+    data.m_itemWidth = itemWidth;
 
     // The backing stores should be drawn at least as wide as the control on the page to match the width of the popup window we'll create.
-    int backingStoreWidth = std::max(pageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), popupWidth);
+    int backingStoreWidth = std::max(pageCoordinates.width() - m_popupClient->clientInsetLeft() - m_popupClient->clientInsetRight(), itemWidth);
 
-    IntSize backingStoreSize(backingStoreWidth, (itemCount * data.m_itemHeight));
+    IntSize backingStoreSize(ceil(backingStoreWidth * deviceScaleFactor), itemCount * itemHeightPhysical);
     data.m_notSelectedBackingStore = ShareableBitmap::create({ backingStoreSize });
     data.m_selectedBackingStore = ShareableBitmap::create({ backingStoreSize });
 
     std::unique_ptr<GraphicsContext> notSelectedBackingStoreContext = data.m_notSelectedBackingStore->createGraphicsContext();
     std::unique_ptr<GraphicsContext> selectedBackingStoreContext = data.m_selectedBackingStore->createGraphicsContext();
 
+    notSelectedBackingStoreContext->applyDeviceScaleFactor(deviceScaleFactor);
+    selectedBackingStoreContext->applyDeviceScaleFactor(deviceScaleFactor);
+
     Color activeOptionBackgroundColor = RenderTheme::singleton().activeListBoxSelectionBackgroundColor({ });
     Color activeOptionTextColor = RenderTheme::singleton().activeListBoxSelectionForegroundColor({ });
 
-    for (int y = 0; y < backingStoreSize.height(); y += data.m_itemHeight) {
-        int index = y / data.m_itemHeight;
+    for (size_t index = 0; index < itemCount; ++index) {
+        int y = index * data.m_itemHeight;
 
         PopupMenuStyle itemStyle = m_popupClient->itemStyle(index);
 
@@ -139,8 +148,9 @@ void WebPopupMenu::setUpPlatformData(const WebCore::IntRect& pageCoordinates, Pl
             }
             int textY = itemRect.y() + itemFontCascade.metricsOfPrimaryFont().intAscent() + (itemRect.height() - itemFontCascade.metricsOfPrimaryFont().intHeight()) / 2;
 
-            notSelectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, IntPoint(textX, textY));
-            selectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, IntPoint(textX, textY));
+            IntPoint textPoint = { textX, textY };
+            notSelectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, textPoint);
+            selectedBackingStoreContext->drawBidiText(itemFontCascade, textRun, textPoint);
         }
     }
 }

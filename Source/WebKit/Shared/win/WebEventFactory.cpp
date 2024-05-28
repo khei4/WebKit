@@ -332,7 +332,7 @@ static String keyIdentifierFromEvent(WPARAM wparam, WebEventType type)
     }
 }
 
-WebMouseEvent WebEventFactory::createWebMouseEvent(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, bool didActivateWebView)
+WebMouseEvent WebEventFactory::createWebMouseEvent(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, bool didActivateWebView, float deviceScaleFactor)
 {
     WebEventType type;
     WebMouseEventButton button = WebMouseEventButton::None;
@@ -391,24 +391,31 @@ WebMouseEvent WebEventFactory::createWebMouseEvent(HWND hWnd, UINT message, WPAR
         type = WebEventType::KeyDown;
     }
 
-    POINT position = point(lParam);
-    POINT globalPosition = position;
-    ::ClientToScreen(hWnd, &globalPosition);
+    POINT positionPhysical = point(lParam);
+    POINT globalPositionPhysical = positionPhysical;
+    ::ClientToScreen(hWnd, &globalPositionPhysical);
+    IntPoint globalPositionLogical(globalPositionPhysical);
+    globalPositionLogical.scale(1 / deviceScaleFactor);
+    IntPoint positionLogical = positionPhysical;
+    positionLogical.scale(1 / deviceScaleFactor);
 
     double timestamp = ::GetTickCount() * 0.001; // ::GetTickCount returns milliseconds (Chrome uses GetMessageTime() / 1000.0)
 
-    int clickCount = WebKit::clickCount(type, button, position, timestamp);
+    int clickCount = WebKit::clickCount(type, button, positionPhysical, timestamp);
     auto modifiers = modifiersForEvent(wParam);
     auto buttons = buttonsForEvent(wParam);
 
-    return WebMouseEvent( { type, modifiers, WallTime::now() }, button, buttons, position, globalPosition, 0, 0, 0, clickCount, didActivateWebView);
+    return WebMouseEvent({ type, modifiers, WallTime::now() }, button, buttons, positionLogical, globalPositionLogical, 0, 0, 0, clickCount, didActivateWebView);
 }
 
-WebWheelEvent WebEventFactory::createWebWheelEvent(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+WebWheelEvent WebEventFactory::createWebWheelEvent(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, float deviceScaleFactor)
 {
-    POINT globalPosition = point(lParam);
-    POINT position = globalPosition;
-    ::ScreenToClient(hWnd, &position);
+    POINT positionPhysical = point(lParam);
+    IntPoint globalPositionLogical = positionPhysical;
+    globalPositionLogical.scale(1 / deviceScaleFactor);
+    ::ScreenToClient(hWnd, &positionPhysical);
+    IntPoint positionLogical = positionPhysical;
+    positionLogical.scale(1 / deviceScaleFactor);
 
     WebWheelEvent::Granularity granularity = WebWheelEvent::ScrollByPixelWheelEvent;
 
@@ -445,7 +452,7 @@ WebWheelEvent WebEventFactory::createWebWheelEvent(HWND hWnd, UINT message, WPAR
         }
     }
 
-    return WebWheelEvent( { WebEventType::Wheel, modifiers, WallTime::now() }, position, globalPosition, FloatSize(deltaX, deltaY), FloatSize(wheelTicksX, wheelTicksY), granularity);
+    return WebWheelEvent({ WebEventType::Wheel, modifiers, WallTime::now() }, positionLogical, globalPositionLogical, FloatSize(deltaX, deltaY), FloatSize(wheelTicksX, wheelTicksY), granularity);
 }
 
 static WindowsKeyNames& windowsKeyNames()
