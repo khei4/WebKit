@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2018 Sony Interactive Entertainment Inc.
  *
@@ -218,7 +218,7 @@ void WebPopupMenuProxyWin::showPopupMenu(const IntRect& rect, TextDirection, dou
         shouldAnimate = FALSE;
 
     if (shouldAnimate) {
-        RECT viewRect { };
+        RECT viewRect {};
         ::GetWindowRect(hostWindow, &viewRect);
 
         if (!::IsRectEmpty(&viewRect)) {
@@ -388,12 +388,11 @@ void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
     };
 
     float centerOfSelect = rectInScreenCoordsPhysical.y() + rectInScreenCoordsPhysical.height() / 2.;
-    bool bellowIsBigger = centerOfSelect < (screen.height() / 2), bellowOverflow = (screen.height() < rectInScreenCoordsPhysical.maxY() + popupHeightPhysical);
     popupHeightPhysical = adjustPopupHeight(popupHeightPhysical);
-    if (bellowOverflow) {
-        if (bellowIsBigger) {
+    if (screen.height() < rectInScreenCoordsPhysical.maxY() + popupHeightPhysical) { // popup doesn't fit bellow.
+        if (centerOfSelect < (screen.height() / 2)) // bellow is bigger
             popupHeightPhysical = adjustPopupHeight(screen.height() - rectInScreenCoordsPhysical.maxY());
-        } else {
+        else {
             popupRectYPhysical = rectInScreenCoordsPhysical.y() - popupHeightPhysical;
             // don't fit
             if (popupRectYPhysical < 0) {
