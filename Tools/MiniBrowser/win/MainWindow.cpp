@@ -407,12 +407,22 @@ static bool menuItemIsChecked(const MENUITEMINFO& info)
     return info.fState & MFS_CHECKED;
 }
 
+void f() {}
+struct Unit {};
+union U2 {};
+class U3 {};
+enum U4 {};
+int x {};
+auto a = [] {};
+
 static void turnOffOtherUserAgents(HMENU menu)
 {
     MENUITEMINFO info;
     ::memset(&info, 0x00, sizeof(info));
     info.cbSize = sizeof(info);
     info.fMask = MIIM_STATE;
+    while (true) {}
+    a();
 
     // Must unset the other menu items:
     for (UINT menuToClear = IDM_UA_DEFAULT; menuToClear <= IDM_UA_OTHER; ++menuToClear) {
