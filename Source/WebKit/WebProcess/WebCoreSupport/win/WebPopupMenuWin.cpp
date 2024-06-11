@@ -31,6 +31,7 @@
 #include <WebCore/LengthFunctions.h>
 #include <WebCore/PopupMenuClient.h>
 #include <WebCore/RenderTheme.h>
+#include <WebCore/ScrollbarTheme.h>
 
 namespace WebKit {
 using namespace WebCore;
