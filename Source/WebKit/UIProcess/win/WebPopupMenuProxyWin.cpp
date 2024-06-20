@@ -51,7 +51,6 @@ static const LPCWSTR kWebKit2WebPopupMenuProxyWindowClassName = L"WebKit2WebPopu
 
 static constexpr int defaultAnimationDuration = 200;
 static constexpr int maxPopupHeight = 320;
-static constexpr int popupWindowBorderWidth = 1;
 
 // This is used from within our custom message pump when we want to send a
 // message to the web view and not have our message stolen and sent to
@@ -359,83 +358,67 @@ void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
         return;
     rectInScreenCoords.setLocation(location);
 
+    // Initialize popupRectwithBorder
     int itemCount = m_items.size();
     m_itemHeight = m_data.m_itemHeight;
     int itemHeightInDevicePixel = m_itemHeight * deviceScaleFactor;
-    int clientInsetLeftInDevicePixel = m_data.m_clientInsetLeft * deviceScaleFactor;
-    int clientInsetRightInDevicePixel = m_data.m_clientInsetRight * deviceScaleFactor;
-
     int naturalHeight = itemHeightInDevicePixel * itemCount;
     int maxPopupHeightInDevicePixel = maxPopupHeight * deviceScaleFactor;
     int popupHeight = std::min(maxPopupHeightInDevicePixel, naturalHeight);
+    int popupWidth = m_data.m_popupWidth;
+    // Check that we need room for a scrollbar
+    if (naturalHeight > maxPopupHeightInDevicePixel)
+        popupWidth += ScrollbarTheme::theme().scrollbarThickness(ScrollbarWidth::Thin);
+    popupWidth *= deviceScaleFactor;
+    IntRect popupRectWithBorder(0, 0, popupWidth, popupHeight);
 
-    auto adjustPopupRect = [itemHeightInDevicePixel](IntRect popupRect) -> IntRect {
-        // The popup should show an integral number of items (i.e. no partial items should be visible)
+    auto adjustPopupRect = [itemHeightInDevicePixel, this](IntRect& popupRect) {
         int height = popupRect.height();
         height -= height % itemHeightInDevicePixel;
         popupRect.setHeight(height);
-
-        // Set window rect with border
+        int noBoarderWidth = popupRect.width();
         RECT rect = popupRect;
         ::AdjustWindowRectEx(&rect, WS_POPUP | WS_BORDER, false, WS_EX_LTRREADING);
         popupRect = rect;
-        return popupRect;
+        m_popupWindowBorderWidth = (popupRect.width() - noBoarderWidth) / 2;
     };
+    adjustPopupRect(popupRectWithBorder);
+    popupRectWithBorder.setY(rectInScreenCoords.maxY());
 
-    // Next determine its width
-    int popupWidth = m_data.m_popupWidth;
+    // Adjust Height/Y
+    // The popup needs to stay within the bounds of the screen and not overlap any toolbars
+    HMONITOR monitor = ::MonitorFromWindow(m_webView->window(), MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFOEX monitorInfo;
+    monitorInfo.cbSize = sizeof(MONITORINFOEX);
+    ::GetMonitorInfo(monitor, &monitorInfo);
+    const IntRect screen = monitorInfo.rcWork;
 
-    if (naturalHeight > maxPopupHeightInDevicePixel) {
-        // We need room for a scrollbar
-        popupWidth += ScrollbarTheme::theme().scrollbarThickness(ScrollbarWidth::Thin);
+    // Check that popup doesn't fit bellow.
+    if (screen.height() < popupRectWithBorder.maxY()) {
+        // Check that bellow is bigger.
+        if ((rectInScreenCoords.y() + rectInScreenCoords.height() / 2) < (screen.height() / 2)) {
+            popupRectWithBorder.setHeight(screen.height() - popupRectWithBorder.y());
+            adjustPopupRect(popupRectWithBorder);
+        } else {
+            // Check that popup doesn't fit above.
+            if (rectInScreenCoords.y() < popupRectWithBorder.height()) {
+                popupRectWithBorder.setHeight(rectInScreenCoords.y());
+                adjustPopupRect(popupRectWithBorder);
+            }
+            popupRectWithBorder.setY(rectInScreenCoords.y() - popupRectWithBorder.height());
+        }
     }
 
-    popupWidth *= deviceScaleFactor;
-
-    IntRect popupRectWithBorder(0, 0, popupWidth, popupHeight);
-    popupRectWithBorder = adjustPopupRect(popupRectWithBorder);
-
+    // Adjust Width/X
+    int clientInsetLeftInDevicePixel = m_data.m_clientInsetLeft * deviceScaleFactor;
+    int clientInsetRightInDevicePixel = m_data.m_clientInsetRight * deviceScaleFactor;
     // The popup should be at least as wide as the control on the page
     popupWidth = std::max(rectInScreenCoords.width() - clientInsetLeftInDevicePixel - clientInsetRightInDevicePixel, popupRectWithBorder.width());
     popupRectWithBorder.setWidth(popupWidth);
 
     // Always left-align items in the popup. This matches popup menus on the mac.
     int popupX = rectInScreenCoords.x() + clientInsetLeftInDevicePixel;
-
-    popupRectWithBorder.setLocation(IntPoint(popupX, rectInScreenCoords.maxY()));
-
-    // The popup needs to stay within the bounds of the screen and not overlap any toolbars
-    HMONITOR monitor = ::MonitorFromWindow(m_webView->window(), MONITOR_DEFAULTTOPRIMARY);
-    MONITORINFOEX monitorInfo;
-    monitorInfo.cbSize = sizeof(MONITORINFOEX);
-    ::GetMonitorInfo(monitor, &monitorInfo);
-    IntRect screen = static_cast<IntRect>(monitorInfo.rcWork);
-
-    // Check that we don't go off the screen vertically
-    if (popupRectWithBorder.maxY() > screen.height()) {
-        // The popup will go off the screen, so try placing it above the client
-        if (rectInScreenCoords.y() - popupRectWithBorder.height() < 0) {
-            // The popup won't fit above, either, so place it whereever's bigger and resize it to fit
-            if ((rectInScreenCoords.y() + rectInScreenCoords.height() / 2) < (screen.height() / 2)) {
-                // Below is bigger
-                int popupRectHeight = screen.height() - popupRectWithBorder.y();
-                popupRectWithBorder.setHeight(popupRectHeight);
-                IntRect adjustedPopupRect = adjustPopupRect(popupRectWithBorder);
-                popupRectWithBorder.setHeight(adjustedPopupRect.height());
-
-            } else {
-                // Above is bigger
-                int popupRectHeight = rectInScreenCoords.y();
-                popupRectWithBorder.setHeight(popupRectHeight);
-                IntRect adjustedPopupRect = adjustPopupRect(popupRectWithBorder);
-                popupRectWithBorder.setHeight(adjustedPopupRect.height());
-                popupRectWithBorder.setY(rectInScreenCoords.y() - popupRectWithBorder.height());
-            }
-        } else {
-            // The popup fits above, so reposition it
-            popupRectWithBorder.setY(rectInScreenCoords.y() - popupRectWithBorder.height());
-        }
-    }
+    popupRectWithBorder.setX(popupX);
 
     m_windowRect = popupRectWithBorder;
 }
@@ -443,7 +426,7 @@ void WebPopupMenuProxyWin::calculatePositionAndSize(const IntRect& rect)
 IntRect WebPopupMenuProxyWin::clientRect() const
 {
     IntRect clientRect = m_windowRect;
-    clientRect.inflate(-popupWindowBorderWidth);
+    clientRect.inflate(-m_popupWindowBorderWidth);
     clientRect.setLocation(IntPoint(0, 0));
     return clientRect;
 }

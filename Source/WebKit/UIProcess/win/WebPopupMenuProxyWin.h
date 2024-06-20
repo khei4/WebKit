@@ -143,6 +143,7 @@ private:
 
     float m_itemHeight { 0 };
     int m_scrollOffset { 0 };
+    int m_popupWindowBorderWidth { 0 };
     int m_wheelDelta { 0 };
     int m_focusedIndex { 0 };
     int m_hoveredIndex { 0 };
